@@ -8,7 +8,7 @@ async function ensureAdminUser({ db }) {
   const password = process.env.ADMIN_PASSWORD;
   if (!password) {
     throw new Error(
-      "ADMIN_PASSWORD is not set. Create a .env from .env.example and set a strong password."
+      "ADMIN_PASSWORD is not set. For local dev, use .env. For production, set ADMIN_PASSWORD in your host's environment variables (the admin user is created on first boot)."
     );
   }
 

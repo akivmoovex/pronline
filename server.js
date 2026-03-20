@@ -20,8 +20,12 @@ const apiRoutes = require("./src/routes/api");
 const app = express();
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+const host = process.env.HOST || "0.0.0.0";
 
 app.disable("x-powered-by");
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 app.use(helmet());
 app.use(morgan("dev"));
 
@@ -82,14 +86,20 @@ app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 ensureAdminUser({ db })
   .then(() => {
-    app.listen(port, () => {
+    app.listen(port, host, () => {
       // eslint-disable-next-line no-console
-      console.log(`Pro-Online (pronline) running on http://localhost:${port}`);
+      console.log(`Pro-Online (pronline) listening on ${host}:${port}`);
     });
   })
   .catch((err) => {
     // eslint-disable-next-line no-console
-    console.error("Failed to initialize admin user:", err);
+    console.error("Failed to initialize admin user:", err.message);
+    if (/ADMIN_PASSWORD/i.test(String(err.message))) {
+      // eslint-disable-next-line no-console
+      console.error(
+        "→ On Hostinger (and most hosts), .env is not deployed. Add ADMIN_PASSWORD in hPanel → Advanced → Environment variables, then redeploy."
+      );
+    }
     process.exit(1);
   });
 
