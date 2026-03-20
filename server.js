@@ -7,11 +7,30 @@ const BetterSqlite3 = require("better-sqlite3");
 const SqliteSessionStore = require("better-sqlite3-session-store")(session);
 const fs = require("fs");
 
-require("dotenv").config();
+// Load .env from the app root (next to server.js), not process.cwd() — Hostinger often uses another cwd.
+const envPath = path.join(__dirname, ".env");
+const dotenvResult = require("dotenv").config({ path: envPath, quiet: true });
+const dotenvKeyCount = Object.keys(dotenvResult.parsed || {}).length;
+
+// One-line diagnostics (no secrets). Hosting env vars exist before Node runs; .env only adds keys if the file exists.
+// eslint-disable-next-line no-console
+console.log(
+  `[pronline] cwd=${process.cwd()} | .env file keys=${dotenvKeyCount} (${envPath}) | ADMIN_PASSWORD=${process.env.ADMIN_PASSWORD ? "set" : "MISSING"} | NODE_ENV=${process.env.NODE_ENV || "(unset)"} | PORT=${process.env.PORT || "(default 3000)"}`
+);
 
 const { ensureAdminUser } = require("./src/auth");
 const { getSubdomain } = require("./src/host");
-const { db } = require("./src/db");
+
+let db;
+try {
+  ({ db } = require("./src/db"));
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error("[pronline] Failed to open app SQLite (check SQLITE_PATH / disk permissions):", err.message);
+  // eslint-disable-next-line no-console
+  console.error(err.stack);
+  process.exit(1);
+}
 
 const publicRoutes = require("./src/routes/public");
 const adminRoutes = require("./src/routes/admin");
@@ -40,10 +59,21 @@ app.use(express.static(path.join(__dirname, "public")));
 const sessionSecret = process.env.SESSION_SECRET || "dev_secret_change_me";
 const sessionDir = process.env.SESSION_DIR || path.join(__dirname, "data");
 const sessionDbPath = process.env.SESSION_DB_PATH || path.join(sessionDir, "sessions.db");
-fs.mkdirSync(sessionDir, { recursive: true });
 
-// Separate DB for session storage (avoid mixing with app data tables)
-const sessionDb = new BetterSqlite3(sessionDbPath);
+let sessionDb;
+try {
+  fs.mkdirSync(sessionDir, { recursive: true });
+  sessionDb = new BetterSqlite3(sessionDbPath);
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[pronline] Failed to create session store SQLite (set SESSION_DIR to a writable folder, e.g. /tmp/pronline):",
+    err.message
+  );
+  // eslint-disable-next-line no-console
+  console.error(err.stack);
+  process.exit(1);
+}
 
 app.use(
   session({
@@ -83,6 +113,11 @@ app.use("/admin", adminRoutes({ db }));
 
 // Healthcheck
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  // eslint-disable-next-line no-console
+  console.warn("[pronline] WARNING: SESSION_SECRET not set in production — using default (set a random secret in hosting env).");
+}
 
 ensureAdminUser({ db })
   .then(() => {
